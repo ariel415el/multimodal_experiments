@@ -3,6 +3,9 @@ from collections import defaultdict
 
 import open_clip
 import torch
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 from alignment import plot_text_to_image_alignment, measure_nn_alignment
 from classify_images import classify_stl, classify_pcs

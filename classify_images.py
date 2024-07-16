@@ -12,13 +12,27 @@ from dimensionality_recuction import pca
 from utils import get_dataset, get_clip_features
 
 
+class ClipClassifier:
+    def __init__(self, model, dataset):
+        text_tokens = clip.tokenize([f"This is a photo of a {label}" for label in dataset.classes]).cuda()
+        with torch.no_grad():
+            label_features = model.encode_text(text_tokens).float()
+            label_features /= label_features.norm(dim=-1, keepdim=True)
+            label_features = label_features
+        
+        self.labe_features = label_features
+    
+    def predict(self, features, return_probs=False):
+       logits = features @ self.labe_features.T
+       if return_probs:
+          return logits
+       return logits.argmax(1).item()
+
+
 def classify_stl(model, n_images=100, outputs_dir='outputs', device=torch.device('cpu')):
     dataset, label_map = get_dataset("STL10", model.preprocess)
-    text_descriptions = [f"This is a photo of a {label}" for label in dataset.classes]
-    text_tokens = clip.tokenize(text_descriptions).cuda()
-    with torch.no_grad():
-        text_features = model.encode_text(text_tokens).float()
-        text_features /= text_features.norm(dim=-1, keepdim=True)
+    
+    classifier = ClipClassifier(model, dataset)
 
     dataloader = DataLoader(dataset, batch_size=n_images, shuffle=True)
     images, labels = next(iter(dataloader))
@@ -30,7 +44,7 @@ def classify_stl(model, n_images=100, outputs_dir='outputs', device=torch.device
         image_features = model.encode_image(images.to(device)).float()
         image_features /= image_features.norm(dim=-1, keepdim=True)
 
-    text_probs = (100.0 * image_features @ text_features.T).softmax(dim=-1)
+    text_probs = (100.0 * classifier.predict(image_features)).softmax(dim=-1)
     top_probs, top_labels = text_probs.cpu().topk(5, dim=-1)
     accuracy = (text_probs.argmax(-1).cpu() == labels).float().mean()
 
@@ -66,19 +80,15 @@ def classify_stl(model, n_images=100, outputs_dir='outputs', device=torch.device
 def classify_pcs(model, outputs_dir='outputs', device=torch.device('cpu')):
     dataset_name = "STL10"
     dataset, label_map = get_dataset(dataset_name, model.preprocess)
-    _, image_features, labels = get_clip_features(model, dataset, label_map, device,
+    text_features, image_features, labels = get_clip_features(model, dataset, label_map, device,
                                                               os.path.join(outputs_dir, f"{dataset_name}_features"))
 
-    text_descriptions = [f"This is a photo of a {label}" for label in dataset.classes]
-    text_tokens = clip.tokenize(text_descriptions).cuda()
-    with torch.no_grad():
-        text_features = model.encode_text(text_tokens).float()
-        text_features /= text_features.norm(dim=-1, keepdim=True)
-        text_features = text_features.cpu().numpy()
 
     PCs, eigv, mean = pca(np.concatenate((text_features, image_features)))
     text_embeddings = np.dot(text_features - mean, PCs)
     image_embeddings = np.dot(image_features - mean, PCs)
+    classifier = ClipClassifier(model, dataset)
+    label_embeddings = np.dot(classifier.labe_features.cpu().numpy() - mean, PCs)
 
     n = text_embeddings.shape[1]
     dropped_top_pcs = np.arange(0, n)
@@ -86,11 +96,11 @@ def classify_pcs(model, outputs_dir='outputs', device=torch.device('cpu')):
     accuracies_top = []
     for i in tqdm(dropped_top_pcs):
         # text_probs = np.(100.0 * image_embeddings[:, i:] @ text_embeddings[:, i:].T).softmax(dim=-1)
-        text_probs = image_embeddings[:, i:] @ text_embeddings[:, i:].T
+        text_probs = image_embeddings[:, i:] @ label_embeddings[:, i:].T
         acc = (text_probs.argmax(-1) == labels).mean()
         accuracies_lower.append(acc)
 
-        text_probs = image_embeddings[:, :i] @ text_embeddings[:, :i].T
+        text_probs = image_embeddings[:, :i] @ label_embeddings[:, :i].T
         acc = (text_probs.argmax(-1) == labels).mean()
         accuracies_top.append(acc)
 
