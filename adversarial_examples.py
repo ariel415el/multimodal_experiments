@@ -4,26 +4,11 @@ import open_clip
 import torch
 
 import clip
+from classify_images import ClipClassifier
 from utils import get_clip_features, get_dataset
 from dimensionality_recuction import pca
 import numpy as np
 import torchvision
-
-class ClipClassifier:
-    def __init__(self, model, dataset):
-        text_tokens = clip.tokenize([f"This is a photo of a {label}" for label in dataset.classes]).cuda()
-        with torch.no_grad():
-            label_features = model.encode_text(text_tokens).float()
-            label_features /= label_features.norm(dim=-1, keepdim=True)
-            label_features = label_features
-        
-        self.labe_features = label_features
-    
-    def predict(self, x, return_probs=False):
-       logits = x @ self.labe_features.T
-       if return_probs:
-          return logits
-       return logits.argmax(1).item()
 
 
 def optimize_latent(model, dataset, classifier):
