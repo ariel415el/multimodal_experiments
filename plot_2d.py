@@ -35,7 +35,6 @@ def plot_per_class_embeddings(text_embeddings, image_embeddings, all_labels, cla
 
 
 def plot_2d(model, dataset_name, pca_mode, outputs_dir, device):
-
     dataset, label_map = get_dataset(dataset_name, model.preprocess)
 
     text_features, image_features, labels = get_clip_features(model, dataset, label_map, device,

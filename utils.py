@@ -85,13 +85,15 @@ def get_clip_features(model, dataset, label_map, device, output_dir):
 
 
 def get_dataset(dataset_name, preprocess):
+    data_root = '/cs/labs/yweiss/ariel1/data'
+    # data_root = '/mnt/storage_ssd/datasets'
     if dataset_name == 'Flickr8k':
-        dataset = FlickrDataset("/mnt/storage_ssd/datasets/Flickr8k/images",
-                                captions_file='/mnt/storage_ssd/datasets/Flickr8k/Flickr8k_text/Flickr8k.token.txt',
+        dataset = FlickrDataset(os.path.join(data_root, "Flickr8k/images"),
+                                captions_file=os.path.join(data_root, 'Flickr8k/Flickr8k_text/Flickr8k.token.txt'),
                                 transform=preprocess)
         label_map = None
     else:
-        dataset = torchvision.datasets.STL10("/mnt/storage_ssd/datasets/STL10", transform=preprocess, download=True)
+        dataset = torchvision.datasets.STL10(os.path.join(data_root, "STL10"), transform=preprocess, download=True)
         label_map = lambda x: f"This is a photo of a {dataset.classes[x]}"
 
     return dataset, label_map
