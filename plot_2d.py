@@ -32,6 +32,7 @@ def plot_per_class_embeddings(text_embeddings, image_embeddings, all_labels, cla
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.title(title)
     plt.savefig(os.path.join(outputs_dir, f"{title}.png"))
+    plt.clf()
 
 
 def plot_2d(model, dataset_name, pca_mode, outputs_dir, device):

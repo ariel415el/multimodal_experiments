@@ -20,13 +20,13 @@ class ClipClassifier:
             label_features /= label_features.norm(dim=-1, keepdim=True)
             label_features = label_features
         
-        self.labe_features = label_features
+        self.label_features = label_features
     
     def predict(self, features, return_probs=False):
-       logits = features @ self.labe_features.T
-       if return_probs:
-          return logits
-       return logits.argmax(1).item()
+        logits = (features @ self.label_features.T).softmax(1)
+        if return_probs:
+            return logits
+        return logits.argmax(1)
 
 
 def classify_stl(model, n_images=100, outputs_dir='outputs', device=torch.device('cpu')):
@@ -38,9 +38,6 @@ def classify_stl(model, n_images=100, outputs_dir='outputs', device=torch.device
     images, labels = next(iter(dataloader))
 
     with torch.no_grad():
-        # logits_per_image, logits_per_text = model(image, text)
-        # probs = logits_per_image.softmax(dim=-1).cpu().numpy()
-
         image_features = model.encode_image(images.to(device)).float()
         image_features /= image_features.norm(dim=-1, keepdim=True)
 

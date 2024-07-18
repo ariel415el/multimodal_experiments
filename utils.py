@@ -84,8 +84,7 @@ def get_clip_features(model, dataset, label_map, device, output_dir):
     return text_features, image_features, labels
 
 
-def get_dataset(dataset_name, preprocess):
-    data_root = '/cs/labs/yweiss/ariel1/data'
+def get_dataset(dataset_name, preprocess, data_root='/cs/labs/yweiss/ariel1/data'):
     # data_root = '/mnt/storage_ssd/datasets'
     if dataset_name == 'Flickr8k':
         dataset = FlickrDataset(os.path.join(data_root, "Flickr8k/images"),
