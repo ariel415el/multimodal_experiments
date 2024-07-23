@@ -31,7 +31,7 @@ class ClipClassifier:
 
 def classify_stl(model, n_images=100, outputs_dir='outputs', device=torch.device('cpu')):
     dataset, label_map = get_dataset("STL10", model.preprocess)
-    
+
     classifier = ClipClassifier(model, dataset)
 
     dataloader = DataLoader(dataset, batch_size=n_images, shuffle=True)
@@ -41,7 +41,7 @@ def classify_stl(model, n_images=100, outputs_dir='outputs', device=torch.device
         image_features = model.encode_image(images.to(device)).float()
         image_features /= image_features.norm(dim=-1, keepdim=True)
 
-    text_probs = (100.0 * classifier.predict(image_features)).softmax(dim=-1)
+    text_probs = 100.0 * classifier.predict(image_features, return_probs=True)
     top_probs, top_labels = text_probs.cpu().topk(5, dim=-1)
     accuracy = (text_probs.argmax(-1).cpu() == labels).float().mean()
 

@@ -33,8 +33,9 @@ if __name__ == '__main__':
     outputs_dir = os.path.join("outputs", f"{model_name}({pretrained_datset})")
     os.makedirs(outputs_dir, exist_ok=True)
 
-    model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained_datset,
-                                                                 device=device, cache_dir='/cs/labs/yweiss/ariel1/big_files')
+    # model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained_datset,
+    #                                                              device=device, cache_dir='/cs/labs/yweiss/ariel1/big_files')
+    model, _, preprocess = open_clip.create_model_and_transforms(model_name, device=device)
     model.preprocess = preprocess
 
     common_params = {'outputs_dir':outputs_dir, 'device':device}
@@ -44,5 +45,5 @@ if __name__ == '__main__':
     # plot_eiegen_spectrum(model, dataset_name='Flickr8k', **common_params)
     # plot_text_to_image_alignment(model, dataset_name='Flickr8k', **common_params)
     # measure_nn_alignment(model, dataset_name='Flickr8k', **common_params)
-    classify_stl(model, n_images=100, **common_params)
-    classify_pcs(model, outputs_dir, device)
+    # classify_stl(model, n_images=100, **common_params)
+    # classify_pcs(model, outputs_dir, device)
