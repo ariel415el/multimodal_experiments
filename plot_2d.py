@@ -41,8 +41,8 @@ def plot_2d(model, dataset_name, pca_mode, outputs_dir, device):
     text_features, image_features, labels = get_clip_features(model, dataset, label_map, device,
                                                               os.path.join(outputs_dir, f"{dataset_name}_features"))
 
-    # text_embeddings, image_embeddings = get_pcas(text_features, image_features, pca_mode=pca_mode)
-    text_embeddings, image_embeddings = get_TSNE_embeddings(text_features, image_features)
+    text_embeddings, image_embeddings = get_pcas(text_features, image_features, pca_mode=pca_mode)
+    # text_embeddings, image_embeddings = get_TSNE_embeddings(text_features, image_features)
 
     title = f"{dataset_name}_{pca_mode}"
     if dataset_name == 'Flickr8k':

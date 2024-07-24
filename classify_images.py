@@ -26,7 +26,7 @@ class ClipClassifier:
         logits = (features @ self.label_features.T).softmax(1)
         if return_probs:
             return logits
-        return logits.argmax(1)
+        return logits.argmax(1).item()
 
 
 def classify_stl(model, n_images=100, outputs_dir='outputs', device=torch.device('cpu')):

@@ -81,11 +81,11 @@ def get_clip_features(model, dataset, label_map, device, output_dir):
         text_features = np.load(os.path.join(output_dir, 'text_features.npy'))
         image_features = np.load(os.path.join(output_dir, 'image_features.npy'))
         labels = np.load(os.path.join(output_dir, 'labels.npy'))
-    return text_features, image_features, labels
+    # return text_features, image_features, labels
+    return torch.from_numpy(text_features), torch.from_numpy(image_features), torch.from_numpy(labels)
 
 
-def get_dataset(dataset_name, preprocess, data_root='/cs/labs/yweiss/ariel1/data'):
-    # data_root = '/mnt/storage_ssd/datasets'
+def get_dataset(dataset_name, preprocess, data_root, restrict_to_classes=None):
     if dataset_name == 'Flickr8k':
         dataset = FlickrDataset(os.path.join(data_root, "Flickr8k/images"),
                                 captions_file=os.path.join(data_root, 'Flickr8k/Flickr8k_text/Flickr8k.token.txt'),
@@ -94,5 +94,14 @@ def get_dataset(dataset_name, preprocess, data_root='/cs/labs/yweiss/ariel1/data
     else:
         dataset = torchvision.datasets.STL10(os.path.join(data_root, "STL10"), transform=preprocess, download=True)
         label_map = lambda x: f"This is a photo of a {dataset.classes[x]}"
+        if restrict_to_classes is not None:
+            subset_idx = [dataset.classes.index(x) for x in restrict_to_classes]
+            dataset.classes = restrict_to_classes
+            indices = np.logical_or(*[dataset.labels == x for x in subset_idx])
+            dataset.data = dataset.data[indices]
+            dataset.labels = dataset.labels[indices]
+            for new_idx, old_idx in enumerate(subset_idx):
+                dataset.labels[dataset.labels == old_idx] = new_idx
+        
 
     return dataset, label_map
