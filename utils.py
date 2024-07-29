@@ -70,17 +70,18 @@ def extract_clip_embedding_from_dataset(model, dataset, label_map=None, device=t
     return all_text_features, all_image_features, all_labels
 
 
-def get_clip_features(model, dataset, label_map, device, output_dir):
-    if not os.path.exists(os.path.join(output_dir, 'text_features.npy')):
-        os.makedirs(output_dir, exist_ok=True)
-        text_features, image_features, labels = extract_clip_embedding_from_dataset(model, dataset, label_map, device)
-        np.save(os.path.join(output_dir, 'text_features.npy'), text_features)
-        np.save(os.path.join(output_dir, 'image_features.npy'), image_features)
-        np.save(os.path.join(output_dir, 'labels.npy'), labels)
-    else:
+def get_clip_features(model, dataset, label_map, device, output_dir=None):
+    if output_dir is not None and os.path.exists(os.path.join(output_dir, 'text_features.npy')):
         text_features = np.load(os.path.join(output_dir, 'text_features.npy'))
         image_features = np.load(os.path.join(output_dir, 'image_features.npy'))
         labels = np.load(os.path.join(output_dir, 'labels.npy'))
+    else:
+        text_features, image_features, labels = extract_clip_embedding_from_dataset(model, dataset, label_map, device)
+        if output_dir is not None:
+            os.makedirs(output_dir, exist_ok=True)
+            np.save(os.path.join(output_dir, 'text_features.npy'), text_features)
+            np.save(os.path.join(output_dir, 'image_features.npy'), image_features)
+            np.save(os.path.join(output_dir, 'labels.npy'), labels)
     # return text_features, image_features, labels
     return torch.from_numpy(text_features), torch.from_numpy(image_features), torch.from_numpy(labels)
 
@@ -96,12 +97,13 @@ def get_dataset(dataset_name, preprocess, data_root, restrict_to_classes=None):
         label_map = lambda x: f"This is a photo of a {dataset.classes[x]}"
         if restrict_to_classes is not None:
             subset_idx = [dataset.classes.index(x) for x in restrict_to_classes]
-            dataset.classes = restrict_to_classes
-            indices = np.logical_or(*[dataset.labels == x for x in subset_idx])
-            dataset.data = dataset.data[indices]
-            dataset.labels = dataset.labels[indices]
+            perm = np.argsort(subset_idx)
+            subset_idx = [subset_idx[i] for i in perm]
+            dataset.classes = [restrict_to_classes[i] for i in perm]
+            filter = np.any([dataset.labels == x for x in subset_idx], axis=0)
+            dataset.data = dataset.data[filter]
+            dataset.labels = dataset.labels[filter]
             for new_idx, old_idx in enumerate(subset_idx):
                 dataset.labels[dataset.labels == old_idx] = new_idx
-        
 
     return dataset, label_map

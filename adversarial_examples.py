@@ -16,8 +16,8 @@ import cv2
 import torchvision
 
 
-def optimize_image(model, img, target_label, classifier, norm_coeff=0.01, lr=0.1, n_steps=100, pc_slice=None, verbose=False):
-    y_goal = torch.tensor([target_label]).cuda()
+def optimize_image(model, img, gt_label, classifier, norm_coeff=0.01, lr=0.1, n_steps=100, pc_slice=None, verbose=False):
+    y_gt = torch.tensor([gt_label]).cuda()
     img = img.clone().cuda().unsqueeze(0)
     residue = torch.randn_like(img) * 1e-4
     residue.requires_grad = True
@@ -30,12 +30,11 @@ def optimize_image(model, img, target_label, classifier, norm_coeff=0.01, lr=0.1
         if i == 0:
             org_pred = classifier.predict(features)
 
-        logits = classifier.predict(features, return_probs=True)
-        # logits = classifier.predict(features, return_probs=True, slice=slice(1, 2))
+        logits = classifier.predict(features, return_probs=True, slice=pc_slice)
 
         residue_norm = torch.norm(residue.view(len(residue), -1), dim=1).mean()
 
-        loss = torch.nn.functional.nll_loss(logits, y_goal) + norm_coeff * residue_norm
+        loss = -torch.nn.functional.nll_loss(logits, y_gt) + norm_coeff * residue_norm
         loss.backward()
         # residue.grad = residue.grad.sign()
         optimizer.step()
@@ -50,63 +49,71 @@ def optimize_image(model, img, target_label, classifier, norm_coeff=0.01, lr=0.1
             features = features / features.norm(dim=-1, keepdim=True)
             cur_pred = classifier.predict(features)
         if residue_norm.item() < best_norm and cur_pred != org_pred:
-            best_img = (img + residue).detach()
+            best_img = (img + residue).detach()[0]
             best_norm = residue_norm.item()
 
 
         if verbose or i  == n_steps - 1:
             print(f"iter: {i}, loss: {loss}, best norm: {best_norm}, norm: {residue_norm}, pred {org_pred}->{cur_pred}")
 
-    return best_img[0], best_norm
+    return best_img, best_norm
 
 
 def test_average_adversarial_margin(model, dataset, classifier, n_images=10):
     all_inputs = []
     all_advs = []
     all_norms = []
+    gt_labels = []
+
     for i in range(n_images):
         input, gt_label = dataset[i]
-        target_label = np.random.choice([x for x in range(len(dataset.classes)) if x != gt_label])
-        adv, adv_residue_norm = optimize_image(model, input, target_label, classifier, norm_coeff=0.01, lr=0.02, n_steps=200, pc_slice=None, verbose=False)
+        # target_label = np.random.choice([x for x in range(len(dataset.classes)) if x != gt_label])
+        adv, adv_residue_norm = optimize_image(model, input, gt_label, classifier,
+                                               norm_coeff=0.01, lr=0.01, n_steps=500, pc_slice=None, verbose=False)
         # assert adv is not None
         if adv is not None:
             all_norms.append(adv_residue_norm)
             all_inputs.append(input)
             all_advs.append(adv)
-    return all_inputs, all_advs, all_norms
+            gt_labels.append(gt_label)
+    return all_inputs, all_advs, all_norms, gt_labels
 
 
-def plot(model, PCs, mean, label_features, image_features, dataset_labels, class_names, inputs, advs, save_path):
+def get_pcs(model, PCs, mean, img):
+    with torch.no_grad():
+        f = model.encode_image(img.cuda().unsqueeze(0)).float().cpu()
+        f /= f.norm(dim=-1, keepdim=True)
+    return (f - mean) @ PCs
 
+
+def plot(model, PCs, mean, label_features, image_features,
+         dataset_labels, class_names, inputs, advs, gt_labels, save_path):
     cmap = plt.get_cmap('tab10')
-    n = len(inputs) + 2
+    n = len(class_names)
     colors = [cmap(i / n) for i in range(n)]
     fig = plt.figure(1, figsize=(8, 5))
     ax = fig.add_subplot(111)
     pc_1 = 0
     pc_2 = 1
-
     # plot data and labels
     label_pcs = (label_features - mean) @ PCs
     image_pcs = (image_features - mean) @ PCs
     for label in np.unique(dataset_labels):
-        ax.scatter(label_pcs[label, pc_1], label_pcs[label, pc_2],
-                   color=colors[-label - 1], label=class_names[label], s=5, alpha=0.5)
         idx = dataset_labels == label
         ax.scatter(image_pcs[idx, pc_1], image_pcs[idx, pc_2],
-                   color=colors[-label - 1], s=5, alpha=0.5)
-    
-    for name, arr, mar in [('inputs', inputs, 'x'),
-                           ('advs', advs, 'o')]:
-        for i, img in enumerate(arr):
-            with torch.no_grad():
-                f = model.encode_image(img.cuda().unsqueeze(0)).float().cpu()
-                f /= f.norm(dim=-1, keepdim=True)
-            pcs = (f - mean) @ PCs
-            ax.scatter(pcs[:, pc_1], pcs[:, pc_2],
-                    color=colors[i], s=60, alpha=0.75, marker=mar, label=name)
+                   color=colors[-label - 1], s=15, alpha=0.25, marker='o')
+        ax.scatter(label_pcs[label, pc_1], label_pcs[label, pc_2],
+                   color=colors[-label - 1], label=class_names[label],
+                   s=100, alpha=1, marker='x', linewidths=[4], edgecolors=['k'])
 
+    for input, adv, gt_label in zip(inputs, advs, gt_labels):
+        input_pcs = get_pcs(model, PCs, mean, input)
+        adv_pcs = get_pcs(model, PCs, mean, adv)
+        dx, dy = adv_pcs[0, pc_1] - input_pcs[0, pc_1] , adv_pcs[0, pc_2] - input_pcs[0, pc_2]
+        plt.arrow(input_pcs[0, pc_1], input_pcs[0, pc_2], dx, dy, head_width=0.005, color=colors[-gt_label - 1])
 
+    plt.xlabel(f"pc {pc_1}")
+    plt.ylabel(f"pc {pc_2}")
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
     plt.savefig(save_path)
@@ -114,26 +121,43 @@ def plot(model, PCs, mean, label_features, image_features, dataset_labels, class
     plt.clf()
 
 
+def plot_embedding_residue(model, PCs, mean, inputs, advs, save_path):
+    fig, axis = plt.subplots(len(inputs), 1, figsize=(8, 8))
+    for i,(input, adv )in enumerate(zip(inputs, advs)):
+        input_pcs = get_pcs(model, PCs, mean, input)[0]
+        adv_pcs = get_pcs(model, PCs, mean, adv)[0]
+        diff = input_pcs - adv_pcs
+        axis[i].bar(np.arange(len(diff)), diff.abs())
+    plt.xlabel("PCs")
+    plt.ylabel("Coeff")
+    plt.savefig(save_path)
+    plt.show()
+    plt.clf()
+
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # model_name = 'ViT-B-32'
-    # pretrained_datset = 'laion2b_s34b_b79k'
-    model_name = 'RN50'
-    pretrained_datset = 'openai'
+    n_samples = 100
+    model_name = 'ViT-B-32'
+    pretrained_datset = 'laion2b_s34b_b79k'
+    # model_name = 'RN50'
+    # pretrained_datset = 'openai'
 
     dataset_name = "STL10"
     outputs_dir = os.path.join("outputs", f"{model_name}({pretrained_datset})")
 
     # Load_model
-    model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained_datset, device=device, cache_dir='/cs/labs/yweiss/ariel1/big_files')
+    model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained_datset,
+                                                                 device=device, cache_dir='/mnt/storage_ssd/big_files')
     model.preprocess = preprocess
 
-    dataset, label_map = get_dataset(dataset_name, model.preprocess, data_root='/cs/labs/yweiss/ariel1/data', restrict_to_classes=['cat', 'dog'])
+    dataset, label_map = get_dataset(dataset_name, model.preprocess, data_root='/mnt/storage_ssd/datasets',
+                                     restrict_to_classes=['cat', 'dog'])
 
 
     # Extract CLIP features
     text_features, image_features, labels = get_clip_features(model, dataset, label_map, device,
-                                                            os.path.join(outputs_dir, f"{dataset_name}_features"))
+                                                              os.path.join(outputs_dir, f"{dataset_name}_features"))
 
     # PCA
     PCs, _, mean = pca(np.concatenate((text_features, image_features)))
@@ -142,20 +166,30 @@ def main():
 
     # Shift text labels into class image means
     classifier = ClipClassifier(model, dataset)
-    
-    inputs, advs, all_norms = test_average_adversarial_margin(model, dataset, classifier, n_images=3)
-    plot(model, PCs, mean, classifier.label_features.cpu(), image_features, labels, dataset.classes, inputs, advs, "With_gap.png")
 
+    inputs, advs, all_norms, gt_labels = test_average_adversarial_margin(model, dataset, classifier, n_images=n_samples)
+    plot_embedding_residue(model, PCs, mean, inputs, advs, "residue_with_gap.png")
+    torchvision.utils.save_image(inputs, "inputs.png", normalize=True)
+    torchvision.utils.save_image(advs, "advs_with_gap.png", normalize=True)
+    plot(model, PCs, mean, classifier.label_features.cpu(), image_features,
+         labels, dataset.classes, inputs, advs, gt_labels, "With_gap.png")
+    n_with_gap = len(inputs)
     gap_mean, gap_std = np.mean(all_norms), np.std(all_norms)
-    print(f"With gap: avg adversarial norm {gap_mean}+-{gap_std}")
 
-    classifier.label_features[0] = image_features[labels==0].mean(0)
-    classifier.label_features[1] = image_features[labels==1].mean(0)
+    for i in range(len(dataset.classes)):
+        classifier.label_features[i] = image_features[labels==i].mean(0)
 
-    all_imgs, all_advs, all_norms = test_average_adversarial_margin(model, dataset, classifier, n_images=10)
+    inputs, advs, all_norms, gt_labels = test_average_adversarial_margin(model, dataset, classifier, n_images=n_samples)
+    plot_embedding_residue(model, PCs, mean, inputs, advs, "residue_no_gap.png")
+    torchvision.utils.save_image(advs, "advs_no_gap.png", normalize=True)
+    plot(model, PCs, mean, classifier.label_features.cpu(), image_features,
+         labels, dataset.classes, inputs, advs, gt_labels,"no_gap.png")
+
+
     no_gap_mean, no_gap_std = np.mean(all_norms), np.std(all_norms)
+    n_no_gap = len(inputs)
+    print(f"With gap: #sucess {n_no_gap}/{n_samples} avg adversarial norm {gap_mean:.2f}+-{gap_std:.2f}")
+    print(f"No gap: #sucess {n_no_gap}/{n_samples} avg adversarial norm {no_gap_mean:.2f}+-{no_gap_std:.2f}")
 
-    print(f"No gap: avg adversarial norm {no_gap_mean}+-{no_gap_std}")
-    
 
 main()
