@@ -22,7 +22,7 @@ class ClipClassifier:
         
         self.label_features = label_features
     
-    def predict(self, features, return_probs=False):
+    def predict(self, features, return_probs=False, **kwargs):
         logits = (features @ self.label_features.T).softmax(1)
         if return_probs:
             return logits

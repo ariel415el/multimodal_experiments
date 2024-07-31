@@ -8,11 +8,7 @@ from dimensionality_recuction import pca
 from utils import get_dataset, get_clip_features
 from classify_images import ClipClassifier
 
-import clip
-
 from torch import optim
-from PIL import Image
-import cv2
 import torchvision
 
 
@@ -49,7 +45,7 @@ def optimize_image(model, img, gt_label, classifier, norm_coeff=0.01, lr=0.1, n_
             features = features / features.norm(dim=-1, keepdim=True)
             cur_pred = classifier.predict(features)
         if residue_norm.item() < best_norm and cur_pred != org_pred:
-            best_img = (img + residue).detach()[0]
+            best_img = (img + residue).detach()
             best_norm = residue_norm.item()
 
 
@@ -87,7 +83,7 @@ def get_pcs(model, PCs, mean, img):
 
 
 def plot(model, PCs, mean, label_features, image_features,
-         dataset_labels, class_names, inputs, advs, gt_labels, save_path):
+    dataset_labels, class_names, inputs, advs, gt_labels, save_path):
     cmap = plt.get_cmap('tab10')
     n = len(class_names)
     colors = [cmap(i / n) for i in range(n)]
@@ -136,6 +132,8 @@ def plot_embedding_residue(model, PCs, mean, inputs, advs, save_path):
 
 
 def main():
+    cache_dir='/cs/labs/yweiss/ariel1/big_files'
+    data_root = '/cs/labs/yweiss/ariel1/data'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n_samples = 100
     model_name = 'ViT-B-32'
@@ -148,10 +146,10 @@ def main():
 
     # Load_model
     model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained_datset,
-                                                                 device=device, cache_dir='/mnt/storage_ssd/big_files')
+                                                                 device=device, cache_dir=cache_dir)
     model.preprocess = preprocess
 
-    dataset, label_map = get_dataset(dataset_name, model.preprocess, data_root='/mnt/storage_ssd/datasets',
+    dataset, label_map = get_dataset(dataset_name, model.preprocess, data_root=data_root,
                                      restrict_to_classes=['cat', 'dog'])
 
 
@@ -191,5 +189,5 @@ def main():
     print(f"With gap: #sucess {n_no_gap}/{n_samples} avg adversarial norm {gap_mean:.2f}+-{gap_std:.2f}")
     print(f"No gap: #sucess {n_no_gap}/{n_samples} avg adversarial norm {no_gap_mean:.2f}+-{no_gap_std:.2f}")
 
-
-main()
+if __name__ == '__main__':
+    main()

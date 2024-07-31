@@ -93,7 +93,10 @@ def get_dataset(dataset_name, preprocess, data_root, restrict_to_classes=None):
                                 transform=preprocess)
         label_map = None
     else:
-        dataset = torchvision.datasets.STL10(os.path.join(data_root, "STL10"), transform=preprocess, download=True)
+        dataset = torchvision.datasets.STL10(os.path.join(data_root, "STL10"), transform=preprocess, download=True, split='train')
+        test_dataset = torchvision.datasets.STL10(os.path.join(data_root, "STL10"), transform=preprocess, download=True, split='test')
+        dataset.data = np.concatenate((dataset.data, test_dataset.data))
+        dataset.labels = np.concatenate((dataset.labels, test_dataset.labels))
         label_map = lambda x: f"This is a photo of a {dataset.classes[x]}"
         if restrict_to_classes is not None:
             subset_idx = [dataset.classes.index(x) for x in restrict_to_classes]
