@@ -21,7 +21,7 @@ def print_models():
         print(f"{model} : {models[model]}")
 
 if __name__ == '__main__':
-    # print_models()
+    print_models()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_name = 'ViT-B-32'
     pretrained_datset = 'laion2b_s34b_b79k'

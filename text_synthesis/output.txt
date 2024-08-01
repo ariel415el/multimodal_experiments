@@ -1,3 +1,5 @@
+{object}
+A {object}
 This is a photo of a {object}.
 Here is a photo of a {object}.
 This is how a {object} looks.

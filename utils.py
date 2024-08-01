@@ -1,5 +1,6 @@
 import os
 
+import open_clip
 import torch
 import torchvision
 import clip
@@ -82,8 +83,7 @@ def get_clip_features(model, dataset, label_map, device, output_dir=None):
             np.save(os.path.join(output_dir, 'text_features.npy'), text_features)
             np.save(os.path.join(output_dir, 'image_features.npy'), image_features)
             np.save(os.path.join(output_dir, 'labels.npy'), labels)
-    # return text_features, image_features, labels
-    return torch.from_numpy(text_features), torch.from_numpy(image_features), torch.from_numpy(labels)
+    return text_features, image_features, labels
 
 
 def get_dataset(dataset_name, preprocess, data_root, restrict_to_classes=None):
@@ -91,13 +91,11 @@ def get_dataset(dataset_name, preprocess, data_root, restrict_to_classes=None):
         dataset = FlickrDataset(os.path.join(data_root, "Flickr8k/images"),
                                 captions_file=os.path.join(data_root, 'Flickr8k/Flickr8k_text/Flickr8k.token.txt'),
                                 transform=preprocess)
-        label_map = None
-    else:
+    elif dataset_name == 'STL10':
         dataset = torchvision.datasets.STL10(os.path.join(data_root, "STL10"), transform=preprocess, download=True, split='train')
-        test_dataset = torchvision.datasets.STL10(os.path.join(data_root, "STL10"), transform=preprocess, download=True, split='test')
-        dataset.data = np.concatenate((dataset.data, test_dataset.data))
-        dataset.labels = np.concatenate((dataset.labels, test_dataset.labels))
-        label_map = lambda x: f"This is a photo of a {dataset.classes[x]}"
+        # test_dataset = torchvision.datasets.STL10(os.path.join(data_root, "STL10"), transform=preprocess, download=True, split='test')
+        # dataset.data = np.concatenate((dataset.data, test_dataset.data))
+        # dataset.labels = np.concatenate((dataset.labels, test_dataset.labels))
         if restrict_to_classes is not None:
             subset_idx = [dataset.classes.index(x) for x in restrict_to_classes]
             perm = np.argsort(subset_idx)
@@ -108,5 +106,18 @@ def get_dataset(dataset_name, preprocess, data_root, restrict_to_classes=None):
             dataset.labels = dataset.labels[filter]
             for new_idx, old_idx in enumerate(subset_idx):
                 dataset.labels[dataset.labels == old_idx] = new_idx
+    else:
+        raise ValueError(f"No such dataset: {dataset_name}")
 
-    return dataset, label_map
+    return dataset
+
+def print_models():
+    models = defaultdict(list)
+    for model, dataset in open_clip.list_pretrained():
+        models[model].append(dataset)
+    for model in models:
+        print(f"{model} : {models[model]}")
+
+
+if __name__ == '__main__':
+    print_models()

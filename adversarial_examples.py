@@ -14,7 +14,7 @@ import torchvision
 
 def optimize_image(model, img, gt_label, classifier, norm_coeff=0.01, lr=0.1, n_steps=100, pc_slice=None, verbose=False):
     y_gt = torch.tensor([gt_label]).cuda()
-    img = img.clone().cuda().unsqueeze(0)
+    img = img.clone().cuda()
     residue = torch.randn_like(img) * 1e-4
     residue.requires_grad = True
     optimizer = optim.Adam([residue], lr=lr)
@@ -24,7 +24,7 @@ def optimize_image(model, img, gt_label, classifier, norm_coeff=0.01, lr=0.1, n_
         features = model.encode_image(img + residue).float()
         features = features / features.norm(dim=-1, keepdim=True)
         if i == 0:
-            org_pred = classifier.predict(features)
+            org_pred = classifier.predict(features).item()
 
         logits = classifier.predict(features, return_probs=True, slice=pc_slice)
 
@@ -43,7 +43,7 @@ def optimize_image(model, img, gt_label, classifier, norm_coeff=0.01, lr=0.1, n_
         with torch.no_grad():
             features = model.encode_image(img + residue).float()
             features = features / features.norm(dim=-1, keepdim=True)
-            cur_pred = classifier.predict(features)
+            cur_pred = classifier.predict(features).item()
         if residue_norm.item() < best_norm and cur_pred != org_pred:
             best_img = (img + residue).detach()
             best_norm = residue_norm.item()
@@ -63,6 +63,7 @@ def test_average_adversarial_margin(model, dataset, classifier, n_images=10):
 
     for i in range(n_images):
         input, gt_label = dataset[i]
+        input = input.unsqueeze(0)
         # target_label = np.random.choice([x for x in range(len(dataset.classes)) if x != gt_label])
         adv, adv_residue_norm = optimize_image(model, input, gt_label, classifier,
                                                norm_coeff=0.01, lr=0.01, n_steps=500, pc_slice=None, verbose=False)
@@ -77,12 +78,12 @@ def test_average_adversarial_margin(model, dataset, classifier, n_images=10):
 
 def get_pcs(model, PCs, mean, img):
     with torch.no_grad():
-        f = model.encode_image(img.cuda().unsqueeze(0)).float().cpu()
+        f = model.encode_image(img.cuda()).float().cpu()
         f /= f.norm(dim=-1, keepdim=True)
-    return (f - mean) @ PCs
+    return (f - mean) @ PCs.T
 
 
-def plot(model, PCs, mean, label_features, image_features,
+def plot(model, PCs, mean, reference_features, image_features,
     dataset_labels, class_names, inputs, advs, gt_labels, save_path):
     cmap = plt.get_cmap('tab10')
     n = len(class_names)
@@ -92,7 +93,7 @@ def plot(model, PCs, mean, label_features, image_features,
     pc_1 = 0
     pc_2 = 1
     # plot data and labels
-    label_pcs = (label_features - mean) @ PCs
+    label_pcs = (reference_features - mean) @ PCs
     image_pcs = (image_features - mean) @ PCs
     for label in np.unique(dataset_labels):
         idx = dataset_labels == label
@@ -120,9 +121,9 @@ def plot(model, PCs, mean, label_features, image_features,
 def plot_embedding_residue(model, PCs, mean, inputs, advs, save_path):
     fig, axis = plt.subplots(len(inputs), 1, figsize=(8, 8))
     for i,(input, adv )in enumerate(zip(inputs, advs)):
-        input_pcs = get_pcs(model, PCs, mean, input)[0]
-        adv_pcs = get_pcs(model, PCs, mean, adv)[0]
-        diff = input_pcs - adv_pcs
+        input_pcs = get_pcs(model, PCs, mean, input)
+        adv_pcs = get_pcs(model, PCs, mean, adv)
+        diff = (input_pcs - adv_pcs)[0]
         axis[i].bar(np.arange(len(diff)), diff.abs())
     plt.xlabel("PCs")
     plt.ylabel("Coeff")
@@ -132,10 +133,12 @@ def plot_embedding_residue(model, PCs, mean, inputs, advs, save_path):
 
 
 def main():
-    cache_dir='/cs/labs/yweiss/ariel1/big_files'
-    data_root = '/cs/labs/yweiss/ariel1/data'
+    # cache_dir='/cs/labs/yweiss/ariel1/big_files'
+    # data_root = '/cs/labs/yweiss/ariel1/data'
+    cache_dir='/mnt/storage_ssd/big_files'
+    data_root = '/mnt/storage_ssd/datasets'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    n_samples = 100
+    n_samples = 3
     model_name = 'ViT-B-32'
     pretrained_datset = 'laion2b_s34b_b79k'
     # model_name = 'RN50'
@@ -149,9 +152,8 @@ def main():
                                                                  device=device, cache_dir=cache_dir)
     model.preprocess = preprocess
 
-    dataset, label_map = get_dataset(dataset_name, model.preprocess, data_root=data_root,
-                                     restrict_to_classes=['cat', 'dog'])
-
+    dataset = get_dataset(dataset_name, model.preprocess, data_root, restrict_to_classes=['cat', 'dog'])
+    label_map = lambda x: f"This is a photo of a {dataset.classes[x]}"
 
     # Extract CLIP features
     text_features, image_features, labels = get_clip_features(model, dataset, label_map, device,
@@ -163,24 +165,24 @@ def main():
 
 
     # Shift text labels into class image means
-    classifier = ClipClassifier(model, dataset)
+    classifier = ClipClassifier(model, [label_map(dataset.classes.index(label)) for label in dataset.classes])
 
     inputs, advs, all_norms, gt_labels = test_average_adversarial_margin(model, dataset, classifier, n_images=n_samples)
     plot_embedding_residue(model, PCs, mean, inputs, advs, "residue_with_gap.png")
     torchvision.utils.save_image(inputs, "inputs.png", normalize=True)
     torchvision.utils.save_image(advs, "advs_with_gap.png", normalize=True)
-    plot(model, PCs, mean, classifier.label_features.cpu(), image_features,
+    plot(model, PCs, mean, classifier.reference_features.cpu(), image_features,
          labels, dataset.classes, inputs, advs, gt_labels, "With_gap.png")
     n_with_gap = len(inputs)
     gap_mean, gap_std = np.mean(all_norms), np.std(all_norms)
 
     for i in range(len(dataset.classes)):
-        classifier.label_features[i] = image_features[labels==i].mean(0)
+        classifier.reference_features[i] = image_features[labels==i].mean(0)
 
     inputs, advs, all_norms, gt_labels = test_average_adversarial_margin(model, dataset, classifier, n_images=n_samples)
     plot_embedding_residue(model, PCs, mean, inputs, advs, "residue_no_gap.png")
     torchvision.utils.save_image(advs, "advs_no_gap.png", normalize=True)
-    plot(model, PCs, mean, classifier.label_features.cpu(), image_features,
+    plot(model, PCs, mean, classifier.reference_features.cpu(), image_features,
          labels, dataset.classes, inputs, advs, gt_labels,"no_gap.png")
 
 
