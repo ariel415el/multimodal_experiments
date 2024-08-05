@@ -6,6 +6,7 @@ import numpy as np
 import open_clip
 import torch
 from matplotlib import pyplot as plt
+from torch import optim
 from tqdm import tqdm
 
 from dimensionality_recuction import pca
@@ -13,19 +14,6 @@ from text_synthesis.gpt import templates
 
 import matplotlib
 matplotlib.use('TkAgg')
-
-# def get_multimodal_pcs():
-#     data_root = '/mnt/storage_ssd/datasets'
-#     dataset_name = 'Flickr8k'
-#     from utils import get_dataset
-#     from utils import get_clip_features
-#     dataset = get_dataset(dataset_name, model.preprocess, data_root, restrict_to_classes=None)
-#
-#     text_features, image_features, labels = get_clip_features(model, dataset, None, device,
-#                                                               os.path.join(outputs_dir, f"{dataset_name}_features"))
-#
-#     PCs, _, mean = pca(np.concatenate((text_features, image_features)))
-#     return PCs, mean
 
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -49,8 +37,9 @@ if __name__ == '__main__':
                 text_feature /= text_feature.norm(dim=-1, keepdim=True)
                 features[cls].append(text_feature.cpu().numpy()[0])
 
-    PCs, _, mean = pca(np.concatenate(list(features.values())))
-    # PCs, mean = get_multimodal_pcs()
+    # PCs, _, mean = pca(np.concatenate(list(features.values())))
+    PCs, mean = get_multimodal_pcs()
+
 
     cmap = plt.get_cmap('tab10')
     colors = [cmap(i) for i in range(len(classes))]
@@ -59,6 +48,7 @@ if __name__ == '__main__':
 
     embs = {k: (np.array(v) - mean) @ PCs for k, v in features.items()}
     for i, (cls, emb) in enumerate(embs.items()):
+        print(f"{cls}: {emb.std(0)[:3]}")
         plt.scatter(emb[:, 0], emb[:, 1], s=15, alpha=0.5, color=colors[i], label=cls)
 
     for i in range(len(templates)):

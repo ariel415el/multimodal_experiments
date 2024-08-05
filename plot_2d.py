@@ -23,6 +23,8 @@ def plot_pca_embeddings(text_embeddings, image_embeddings, title, outputs_dir):
 
 
 def plot_per_class_embeddings(text_embeddings, image_embeddings, all_labels, class_names, title, outputs_dir):
+    pc1 = 0
+    pc2 = 1
     cmap = plt.get_cmap('tab10')
     labels = np.unique(all_labels)
     colors = [cmap(i) for i in range(len(labels))]
@@ -66,10 +68,6 @@ if __name__ == '__main__':
 
     dataset_name = 'STL10'
     # dataset_name = 'Flickr8k'
-
-    pc1 = 1
-    # pc2 = 1
-    pc2 = 4
 
     outputs_dir = os.path.join("outputs", f"{model_name}({pretrained_dataset})")
     os.makedirs(outputs_dir, exist_ok=True)

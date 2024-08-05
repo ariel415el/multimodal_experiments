@@ -80,7 +80,7 @@ def get_pcs(model, PCs, mean, img):
     with torch.no_grad():
         f = model.encode_image(img.cuda()).float().cpu()
         f /= f.norm(dim=-1, keepdim=True)
-    return (f - mean) @ PCs.T
+    return (f - mean) @ PCs
 
 
 def plot(model, PCs, mean, reference_features, image_features,
@@ -162,15 +162,15 @@ def main():
     # PCA
     PCs, _, mean = pca(np.concatenate((text_features, image_features)))
     PCs, mean = torch.from_numpy(PCs), torch.from_numpy(mean)
-
+    image_features = torch.from_numpy(image_features)
 
     # Shift text labels into class image means
-    classifier = ClipClassifier(model, [label_map(dataset.classes.index(label)) for label in dataset.classes])
+    classifier = ClipClassifier(model, [label_map(dataset.classes.index(label)) for label in dataset.classes], device)
 
     inputs, advs, all_norms, gt_labels = test_average_adversarial_margin(model, dataset, classifier, n_images=n_samples)
     plot_embedding_residue(model, PCs, mean, inputs, advs, "residue_with_gap.png")
-    torchvision.utils.save_image(inputs, "inputs.png", normalize=True)
-    torchvision.utils.save_image(advs, "advs_with_gap.png", normalize=True)
+    torchvision.utils.save_image(torch.cat(inputs), "inputs.png", normalize=True)
+    torchvision.utils.save_image(torch.cat(advs), "advs_with_gap.png", normalize=True)
     plot(model, PCs, mean, classifier.reference_features.cpu(), image_features,
          labels, dataset.classes, inputs, advs, gt_labels, "With_gap.png")
     n_with_gap = len(inputs)
@@ -181,7 +181,7 @@ def main():
 
     inputs, advs, all_norms, gt_labels = test_average_adversarial_margin(model, dataset, classifier, n_images=n_samples)
     plot_embedding_residue(model, PCs, mean, inputs, advs, "residue_no_gap.png")
-    torchvision.utils.save_image(advs, "advs_no_gap.png", normalize=True)
+    torchvision.utils.save_image(torch.cat(advs), "advs_no_gap.png", normalize=True)
     plot(model, PCs, mean, classifier.reference_features.cpu(), image_features,
          labels, dataset.classes, inputs, advs, gt_labels,"no_gap.png")
 
