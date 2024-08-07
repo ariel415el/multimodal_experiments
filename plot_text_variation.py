@@ -13,21 +13,43 @@ from dimensionality_recuction import pca
 from text_synthesis.gpt import templates
 
 import matplotlib
-matplotlib.use('TkAgg')
+
+from utils import get_clip_features, get_dataset
+
+# matplotlib.use('TkAgg')
+
+def get_multimodal_pcs():
+    data_root = '/cs/labs/yweiss/ariel1/data'
+    dataset_name = 'STL10'
+    dataset = get_dataset(dataset_name, model.preprocess, data_root, restrict_to_classes=classes)
+    label_map = lambda x: f"This is a photo of a {dataset.classes[x]}"
+
+    text_features, image_features, labels = get_clip_features(model, dataset, label_map, device,
+                                                              os.path.join(outputs_dir, f"{dataset_name}_features"))
+
+    PCs, _, mean = pca(np.concatenate((text_features, image_features)))
+
+    return PCs, mean
 
 if __name__ == '__main__':
+    cache_dir = '/cs/labs/yweiss/ariel1/big_files'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_name = 'ViT-B-32'
     pretrained_datset = 'laion2b_s34b_b79k'
-    classes = ['car', 'dog']
+    classes = ['cat', 'dog']
 
     outputs_dir = os.path.join("outputs", f"{model_name}({pretrained_datset})")
     os.makedirs(outputs_dir, exist_ok=True)
 
-    model, _, preprocess = open_clip.create_model_and_transforms(model_name, device=device)
+
+    model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained_datset,
+                                                                 device=device, cache_dir=cache_dir)
     model.preprocess = preprocess
+    model.eval()
 
     features = defaultdict(list)
+
+    # templates = ['This is a photo of a {object}']
 
     for template in tqdm(templates):
         for cls in classes:
@@ -51,6 +73,11 @@ if __name__ == '__main__':
         print(f"{cls}: {emb.std(0)[:3]}")
         plt.scatter(emb[:, 0], emb[:, 1], s=15, alpha=0.5, color=colors[i], label=cls)
 
+    print(templates[embs[classes[0]][:, 0].argmin()])
+    print(templates[embs[classes[0]][:, 0].argmax()])
+    print(templates[embs[classes[1]][:, 0].argmin()])
+    print(templates[embs[classes[1]][:, 0].argmax()])
+
     for i in range(len(templates)):
         x0 = embs[classes[0]][i, 0]
         y0 = embs[classes[0]][i, 1]
@@ -62,5 +89,5 @@ if __name__ == '__main__':
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
     plt.savefig("text_variation.png")
-    plt.show()
+    # plt.show()
     plt.clf()

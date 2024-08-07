@@ -60,12 +60,12 @@ def plot_2d(model, dataset, dataset_name, outputs_dir, device, label_map=None):
 
 
 if __name__ == '__main__':
-    cache_dir = '/mnt/storage_ssd/big_files'
-    data_root = '/mnt/storage_ssd/datasets'
+    cache_dir = '/cs/labs/yweiss/ariel1/big_files'
+    data_root = '/cs/labs/yweiss/ariel1/data'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     pretrained_dataset = 'laion2b_s34b_b79k'
     model_name = 'ViT-B-32'
-
+    restrict_to_classes = ['cat', 'dog']
     dataset_name = 'STL10'
     # dataset_name = 'Flickr8k'
 
@@ -77,7 +77,7 @@ if __name__ == '__main__':
     model.preprocess = preprocess
     model.eval()
 
-    dataset = get_dataset(dataset_name, model.preprocess, data_root, restrict_to_classes=None)
+    dataset = get_dataset(dataset_name, model.preprocess, data_root, restrict_to_classes)
     label_map = None
     if dataset_name == "STL10":
         label_map = lambda x: f"This is a photo of a {dataset.classes[x]}"

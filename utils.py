@@ -53,7 +53,7 @@ def extract_clip_embedding_from_dataset(model, dataset, label_map=None, device=t
             text_descriptions = map(label_map, labels)
         else:
             text_descriptions = list(labels)
-        text_tokens = clip.tokenize(text_descriptions).cuda()
+        text_tokens = clip.tokenize(text_descriptions).to(device)
         with torch.no_grad():
             text_features = model.encode_text(text_tokens).float()
             image_features = model.encode_image(images.to(device)).float()

@@ -20,10 +20,9 @@ class ClipClassifier:
         self.device = device
         text_tokens = clip.tokenize(reference_texts).to(self.device)
         with torch.no_grad():
-            reference_features = model.encode_text(text_tokens).float()
-            reference_features /= reference_features.norm(dim=-1, keepdim=True)
+            self.reference_features = model.encode_text(text_tokens).float()
+            self.reference_features /= self.reference_features.norm(dim=-1, keepdim=True)
 
-        self.reference_features = reference_features
     
     def predict(self, features, return_probs=False, **kwargs):
         logits = (features.to(self.device) @ self.reference_features.T).softmax(-1)
@@ -31,30 +30,18 @@ class ClipClassifier:
             return logits
         return logits.argmax(1)
 
-def classify_bath(model, dataset, classifier, batch_size, return_probs=False):
-    images, labels = next(iter(DataLoader(dataset, batch_size=batch_size, shuffle=True)))
+
+def plot_classification(model, n_images=100, outputs_dir='outputs', device=torch.device('cpu')):
+    dataset = get_dataset('STL10', model.preprocess, data_root, restrict_to_classes=restrict_to_classes)
+    classifier = ClipClassifier(model, [f"This is a photo of a {label}" for label in dataset.classes], device)
+
+    images, labels = next(iter(DataLoader(dataset, batch_size=n_images, shuffle=True)))
     with torch.no_grad():
         image_features = model.encode_image(images.to(device)).float()
         image_features /= image_features.norm(dim=-1, keepdim=True)
     text_probs = 100.0 * classifier.predict(image_features, return_probs=True)
-    if return_probs:
-        return text_probs
-    else:
-        accuracy = (text_probs.argmax(-1).cpu() == labels).float().mean()
-        return accuracy
 
-
-def plot_classification(model, dataset, n_images=100, outputs_dir='outputs', device=torch.device('cpu')):
-    classifier = ClipClassifier(model, [f"This is a photo of a {label}" for label in dataset.classes], device)
-
-    images, labels = next(iter(DataLoader(dataset, batch_size=n_images, shuffle=True)))
-
-    with torch.no_grad():
-        image_features = model.encode_image(images.to(device)).float()
-        image_features /= image_features.norm(dim=-1, keepdim=True)
-
-    text_probs = classify_bath(model, dataset, classifier, n_images, return_probs=True)
-    top_probs, top_labels = text_probs.cpu().topk(5, dim=-1)
+    top_probs, top_labels = text_probs.cpu().topk(min(5,text_probs.size(-1)), dim=-1)
     accuracy = (text_probs.argmax(-1).cpu() == labels).float().mean()
 
     print(f"Accuracy: {(accuracy*100).int()}%")
@@ -87,7 +74,6 @@ def plot_classification(model, dataset, n_images=100, outputs_dir='outputs', dev
 
 
 def compare_prompts(n_images):
-    print(np.unique(templates).tolist())
     for template in templates[:15]:
         classifier = ClipClassifier(model, [template.replace('{object}', label) for label in dataset.classes], device)
 
@@ -103,7 +89,7 @@ def compare_prompts(n_images):
         print(f"{template}: Accuracy: {(accuracy*100).int()}%")
 
 
-def plot_classifier(classifier, image_features, all_labels, PCs, mean, title):
+def plot_classifier(classifier, class_names, image_features, all_labels, PCs, mean, title):
     new_reference_embs = (classifier.reference_features.cpu().numpy() - mean) @ PCs
     image_embeddings = (image_features - mean) @ PCs
     cmap = plt.get_cmap('tab10')
@@ -114,7 +100,7 @@ def plot_classifier(classifier, image_features, all_labels, PCs, mean, title):
     for label in labels:
         idx = all_labels == label
         ax.scatter(new_reference_embs[label, 0], new_reference_embs[label, 1],
-                   color=colors[label], label=dataset.classes[label], s=10, alpha=0.5, marker='x')
+                   color=colors[label], label=class_names[label], s=10, alpha=0.5, marker='x')
         ax.scatter(image_embeddings[idx, 0], image_embeddings[idx, 1],
                    color=colors[label], s=2, alpha=0.5, marker='o')
 
@@ -122,7 +108,9 @@ def plot_classifier(classifier, image_features, all_labels, PCs, mean, title):
     a,b = new_reference_embs[0, :2]
     c,d = new_reference_embs[1, :2]
     y = lambda x: (b+d)/2 + (x-(a+c)/2)*(a-c) / (d-b)
-    xs =np.array([image_embeddings[:, 0].min(), new_reference_embs[:, 0].max()])
+    minv = min(image_embeddings[:, 0].min(), new_reference_embs[:, 0].min())
+    maxv = max(image_embeddings[:, 0].max(), new_reference_embs[:, 0].max())
+    xs =np.array([minv, maxv])
     ylim  = plt.ylim()
     xlim  = plt.xlim()
     plt.plot(xs, y(xs), linestyle='--', color='black', label='classifier')
@@ -137,8 +125,21 @@ def plot_classifier(classifier, image_features, all_labels, PCs, mean, title):
     plt.clf()
 
 
+def classify_bath(model, dataset, classifier, batch_size, return_probs=False):
+    images, labels = next(iter(DataLoader(dataset, batch_size=batch_size, shuffle=True)))
+    with torch.no_grad():
+        image_features = model.encode_image(images.to(device)).float()
+        image_features /= image_features.norm(dim=-1, keepdim=True)
+    text_probs = 100.0 * classifier.predict(image_features, return_probs=True)
+    if return_probs:
+        return text_probs
+    else:
+        accuracy = (text_probs.argmax(-1).cpu() == labels).float().mean()
+        return accuracy
+
+
 def test_reference_shift():
-    pc_shift = 0.15
+    pc_shift = 0.2
     dataset_name = 'STL10'
     dataset = get_dataset(dataset_name, model.preprocess, data_root, restrict_to_classes=['cat', 'dog'])
     label_map = lambda x: f"This is a photo of a {dataset.classes[x]}"
@@ -146,16 +147,23 @@ def test_reference_shift():
                                                                   os.path.join(outputs_dir, f"{dataset_name}_features"))
 
     PCs, _, mean = pca(np.concatenate((text_features, image_features)))
+    # mean = 0
     # PCs = PCs[:, :2]
 
+    # classifier = ClipClassifier(model, [f'This is a photo if a {dataset.classes[0]}', f'This is a photo if a {dataset.classes[1]}'], device)
+    # classifier = ClipClassifier(model, [f'This is a photo if a {dataset.classes[0]}', f'Presenting a {dataset.classes[1]}'], device)
     classifier = ClipClassifier(model, dataset.classes, device)
-    classifier.reference_features[1, :] += torch.from_numpy(PCs[:, 0] * pc_shift).to(device)
 
-    logits = (image_features - mean) @ (classifier.reference_features.cpu().numpy() - mean).T
+    classifier.reference_features[1, :] += torch.from_numpy(PCs[:, 0] * pc_shift).to(device)
+    # acc = classify_bath(model, dataset, classifier, 1000, return_probs=False)
+
+    logits = (image_features - mean)  @ (classifier.reference_features.cpu().numpy() - mean).T
+    # logits = image_features  @ classifier.reference_features.cpu().numpy().T
     acc = (logits.argmax(-1) == all_labels).mean()
+
     print(f"Accuracy: {(acc*100):.1f}%")
 
-    plot_classifier(classifier, image_features, all_labels, PCs, mean, f"shift pc0: ({pc_shift}) Acc: {acc*100:.1f}%")
+    plot_classifier(classifier, dataset.classes, image_features, all_labels, PCs, mean, f"shift pc0: ({pc_shift}) Acc: {acc*100:.1f}%")
 
 
 def classify_pcs(model, outputs_dir='outputs', device=torch.device('cpu')):
@@ -196,12 +204,12 @@ def classify_pcs(model, outputs_dir='outputs', device=torch.device('cpu')):
 
 
 if __name__ == '__main__':
-    cache_dir = '/mnt/storage_ssd/big_files'
-    data_root = '/mnt/storage_ssd/datasets'
+    cache_dir = '/cs/labs/yweiss/ariel1/big_files'
+    data_root = '/cs/labs/yweiss/ariel1/data'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     pretrained_dataset = 'laion2b_s34b_b79k'
     model_name = 'ViT-B-32'
-
+    restrict_to_classes = ['cat', 'dog']
     outputs_dir = os.path.join("outputs", f"{model_name}({pretrained_dataset})")
     os.makedirs(outputs_dir, exist_ok=True)
 
@@ -210,9 +218,7 @@ if __name__ == '__main__':
     model.preprocess = preprocess
     model.eval()
 
-    dataset = get_dataset('STL10', model.preprocess, data_root, restrict_to_classes=None)
-
-    # plot_classification(model, dataset, n_images=100, outputs_dir=outputs_dir, device=device)
+    # plot_classification(model, n_images=100, outputs_dir=outputs_dir, device=device)
 
     # compare_prompts(n_images=1000)
 
